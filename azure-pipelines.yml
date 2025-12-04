@@ -1,8 +1,9 @@
 trigger:
 - main
 
+# Use Microsoft-hosted Ubuntu agent
 pool:
-  name: Default   # your self-hosted agent
+  vmImage: ubuntu-latest
 
 stages:
 
@@ -14,13 +15,20 @@ stages:
   jobs:
   - job: BuildJob
     displayName: "Build C++ Project"
+    container: mcr.microsoft.com/devcontainers/cpp:ubuntu-22.04
     steps:
+    - checkout: self
+
     - script: |
         mkdir -p build
         cd build
         cmake ..
-        cmake --build . --config Release
+        cmake --build .
       displayName: "Configure and Build C++ Project"
+
+    - publish: build
+      artifact: BuildOutput
+      displayName: "Publish build folder"
 
 # ----------------
 # 2️⃣ Test Stage
@@ -29,21 +37,35 @@ stages:
   displayName: "Test Stage"
   dependsOn: Build
   jobs:
-  
-  # --- C++ Unit Test Job ---
+
+  # --- C++ Unit Test ---
   - job: CppUnitTest
     displayName: "C++ Unit Test"
+    container: mcr.microsoft.com/devcontainers/cpp:ubuntu-22.04
     steps:
+    - download: current
+      artifact: BuildOutput
+
     - script: |
-        cd build
-        ctest -C Release --output-on-failure
+        cd $(Pipeline.Workspace)/BuildOutput
+        ctest --output-on-failure
       displayName: "Run C++ Unit Tests"
 
-  # --- Python Pytest Job ---
+  # --- Python Pytest ---
   - job: Pytest
     displayName: "Python Pytest"
+    container: mcr.microsoft.com/devcontainers/python:ubuntu-22.04
     steps:
+    - checkout: self
+
     - script: |
-        pip install pytest
+        # Create virtual environment
+        python3 -m venv venv_pytest
+        source venv_pytest/bin/activate
+
+        # Upgrade pip and install pytest
+        pip install --upgrade pip pytest
+
+        # Run tests
         pytest pytests -v
-      displayName: "Run Pytest"
+      displayName: "Run Python Pytest"

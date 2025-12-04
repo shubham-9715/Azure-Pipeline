@@ -2,8 +2,48 @@ trigger:
 - main
 
 pool:
-  name: Default
+  name: Default   # your self-hosted agent
 
-steps:
-- script: echo " Hello world! From SHubham"
-  displayName: 'Run a one-line script'
+stages:
+
+# ----------------
+# 1️⃣ Build Stage
+# ----------------
+- stage: Build
+  displayName: "Build Stage"
+  jobs:
+  - job: BuildJob
+    displayName: "Build C++ Project"
+    steps:
+    - script: |
+        mkdir -p build
+        cd build
+        cmake ..
+        cmake --build . --config Release
+      displayName: "Configure and Build C++ Project"
+
+# ----------------
+# 2️⃣ Test Stage
+# ----------------
+- stage: Test
+  displayName: "Test Stage"
+  dependsOn: Build
+  jobs:
+  
+  # --- C++ Unit Test Job ---
+  - job: CppUnitTest
+    displayName: "C++ Unit Test"
+    steps:
+    - script: |
+        cd build
+        ctest -C Release --output-on-failure
+      displayName: "Run C++ Unit Tests"
+
+  # --- Python Pytest Job ---
+  - job: Pytest
+    displayName: "Python Pytest"
+    steps:
+    - script: |
+        pip install pytest
+        pytest pytests -v
+      displayName: "Run Pytest"

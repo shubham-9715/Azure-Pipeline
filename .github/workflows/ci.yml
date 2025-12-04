@@ -1,0 +1,75 @@
+name: C++ + PyTest CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  # ======================================================
+  # 1️⃣ BUILD STAGE
+  # ======================================================
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Install CMake
+      uses: lukka/get-cmake@latest
+
+    - name: Configure & Build (MinGW)
+      shell: powershell
+      run: |
+        mkdir build
+        cd build
+        cmake -G "MinGW Makefiles" ..
+        cmake --build .
+
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: BuildOutput
+        path: build/
+
+  # ======================================================
+  # 2️⃣ TEST STAGE
+  # ======================================================
+  test:
+    runs-on: windows-latest
+    needs: build
+
+    steps:
+
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Download Build Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: BuildOutput
+        path: build
+
+    - name: Run C++ Unit Tests (CTest)
+      shell: powershell
+      run: |
+        cd build
+        ctest --output-on-failure
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install Dependencies
+      shell: powershell
+      run: |
+        python -m pip install --upgrade pip pytest
+
+    - name: Run PyTests
+      shell: powershell
+      run: |
+        python -m pytest ./pytests -v

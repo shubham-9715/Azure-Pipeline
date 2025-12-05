@@ -73,3 +73,27 @@ jobs:
       shell: powershell
       run: |
         python -m pytest ./pytests -v
+
+  # ======================================================
+  # 3️⃣ DEPLOY TO JFROG ARTIFACTORY
+  # ======================================================
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+    - name: Download Build Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: BuildOutput
+        path: build
+
+    - name: Upload to Artifactory
+      run: |
+        # zip build output
+        zip -r build-output.zip build/
+
+        # Upload using Bearer Token (correct method for your JWT)
+        curl -H "Authorization: Bearer ${{ secrets.JFROG_TOKEN }}" \
+             -T build-output.zip \
+             "${{ secrets.JFROG_URL }}/${{ secrets.JFROG_REPO }}/build-output.zip"

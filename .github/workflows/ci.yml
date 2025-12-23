@@ -1,4 +1,4 @@
-name: C++ + PyTest CI
+name: C++ + PyTest + Debian Package CI
 
 on:
   push:
@@ -9,91 +9,94 @@ on:
 jobs:
 
   # ======================================================
-  # 1️⃣ BUILD STAGE
+  # 1️⃣ BUILD + TEST + PACKAGE (LINUX)
   # ======================================================
-  build:
-    runs-on: windows-latest
+  build-test-package:
+    runs-on: ubuntu-latest
 
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Install CMake
-      uses: lukka/get-cmake@latest
-
-    - name: Configure & Build (MinGW)
-      shell: powershell
+    # -------------------------------
+    # Install Dependencies
+    # -------------------------------
+    - name: Install Build Dependencies
       run: |
-        mkdir build
-        cd build
-        cmake -G "MinGW Makefiles" ..
-        cmake --build .
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          build-essential \
+          libgtest-dev \
+          python3 \
+          python3-pip
 
-    - name: Upload Build Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: BuildOutput
-        path: build/
+    # -------------------------------
+    # Configure & Build
+    # -------------------------------
+    - name: Configure CMake
+      run: |
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-  # ======================================================
-  # 2️⃣ TEST STAGE
-  # ======================================================
-  test:
-    runs-on: windows-latest
-    needs: build
+    - name: Build
+      run: |
+        cmake --build build --parallel
 
-    steps:
-
-    - name: Checkout Code
-      uses: actions/checkout@v4
-
-    - name: Download Build Artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: BuildOutput
-        path: build
-
-    - name: Run C++ Unit Tests (CTest)
-      shell: powershell
+    # -------------------------------
+    # Run C++ Tests
+    # -------------------------------
+    - name: Run CTest
       run: |
         cd build
         ctest --output-on-failure
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.10"
-
-    - name: Install Dependencies
-      shell: powershell
+    # -------------------------------
+    # Run PyTests
+    # -------------------------------
+    - name: Install PyTest
       run: |
-        python -m pip install --upgrade pip pytest
+        pip3 install pytest
 
     - name: Run PyTests
-      shell: powershell
       run: |
-        python -m pytest ./pytests -v
+        pytest pytests -v
+
+    # -------------------------------
+    # Build Debian Package
+    # -------------------------------
+    - name: Build Debian Package (.deb)
+      run: |
+        cd build
+        cpack -G DEB
+
+    # -------------------------------
+    # Upload .deb as artifact
+    # -------------------------------
+    - name: Upload Debian Package
+      uses: actions/upload-artifact@v4
+      with:
+        name: debian-package
+        path: build/*.deb
 
   # ======================================================
-  # 3️⃣ DEPLOY TO JFROG ARTIFACTORY
+  # 2️⃣ DEPLOY TO JFROG ARTIFACTORY (APT)
   # ======================================================
   deploy:
     runs-on: ubuntu-latest
-    needs: test
+    needs: build-test-package
 
     steps:
-    - name: Download Build Artifact
+    - name: Download Debian Package
       uses: actions/download-artifact@v4
       with:
-        name: BuildOutput
-        path: build
+        name: debian-package
+        path: deb
 
-    - name: Upload to Artifactory
+    - name: Upload to JFrog Artifactory (APT Repo)
       run: |
-        # zip build output
-        zip -r build-output.zip build/
-
-        # Upload using Bearer Token (correct method for your JWT)
-        curl -H "Authorization: Bearer ${{ secrets.JFROG_TOKEN }}" \
-             -T build-output.zip \
-             "${{ secrets.JFROG_URL }}/${{ secrets.JFROG_REPO }}/build-output.zip"
+        for pkg in deb/*.deb; do
+          echo "Uploading $pkg"
+          curl -H "Authorization: Bearer ${{ secrets.JFROG_TOKEN }}" \
+               -T "$pkg" \
+               "${{ secrets.JFROG_URL }}/deb-local/$(basename $pkg)"
+        done

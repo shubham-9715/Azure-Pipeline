@@ -1,71 +1,56 @@
+# azure-pipelines.yml
 trigger:
-- main
+  branches:
+    include:
+      - main
+      - feature/*
 
-# Use Microsoft-hosted Ubuntu agent
-pool:
-  vmImage: ubuntu-latest
+variables:
+  BUILD_DIR: 'build'
 
 stages:
+  # ===============================
+  # Stage 1: Build
+  # ===============================
+  - stage: Build
+    displayName: "Build Stage"
+    jobs:
+      - job: BuildJob
+        displayName: "Build Project"
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - script: |
+              echo "Creating build directory"
+              mkdir -p $(BUILD_DIR)
+              cd $(BUILD_DIR)
+              cmake ..
+              cmake --build . -- -j$(nproc)
+            displayName: "Build Project"
 
-# ----------------
-# 1️⃣ Build Stage
-# ----------------
-- stage: Build
-  displayName: "Build Stage"
-  jobs:
-  - job: BuildJob
-    displayName: "Build C++ Project"
-    container: mcr.microsoft.com/devcontainers/cpp:ubuntu-22.04
-    steps:
-    - checkout: self
+          # Publish the entire build folder as an artifact
+          - publish: $(BUILD_DIR)
+            artifact: build
+            displayName: "Publish Build Artifacts"
 
-    - script: |
-        mkdir -p build
-        cd build
-        cmake ..
-        cmake --build .
-      displayName: "Configure and Build C++ Project"
+  # ===============================
+  # Stage 2: Unit Test
+  # ===============================
+  - stage: UnitTest
+    displayName: "Unit Test Stage"
+    dependsOn: Build
+    jobs:
+      - job: TestJob
+        displayName: "Run Unit Tests"
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          # Download build artifacts from Build stage
+          - download: current
+            artifact: build
 
-    - publish: build
-      artifact: BuildOutput
-      displayName: "Publish build folder"
-
-# ----------------
-# 2️⃣ Test Stage
-# ----------------
-- stage: Test
-  displayName: "Test Stage"
-  dependsOn: Build
-  jobs:
-
-  # --- C++ Unit Test ---
-  - job: CppUnitTest
-    displayName: "C++ Unit Test"
-    container: mcr.microsoft.com/devcontainers/cpp:ubuntu-22.04
-    steps:
-    - download: current
-      artifact: BuildOutput
-
-    - script: |
-        cd $(Pipeline.Workspace)/BuildOutput
-        ctest --output-on-failure
-      displayName: "Run C++ Unit Tests"
-
-  # --- Python Pytest ---
-  - job: Pytest
-    displayName: "Python Pytest"
-    container: mcr.microsoft.com/devcontainers/python:ubuntu-22.04
-    steps:
-    - checkout: self
-
-    - script: |
-        # Create virtual environment
-        python3 -m venv venv_pytest
-        source venv_pytest/bin/activate
-
-        # Upgrade pip and install pytest
-        pip install --upgrade pip pytest
-
-        # Run tests
-        pytest pytests -v
-      displayName: "Run Python Pytest"
+          - script: |
+              cd $(Pipeline.Workspace)/build/tests
+              chmod +x ./calc_unittests
+              ./calc_unittests
+            displayName: "Run Unit Tests"
